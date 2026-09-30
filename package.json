@@ -1,12 +1,20 @@
 {
-  "name": "ses-keeper",
+  "name": "discord-voice-keeper",
   "version": "1.0.0",
+  "description": "Secure Discord Selfbot Voice Keeper Dashboard",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js-selfbot-v13": "^3.3.0",
-    "express": "^4.19.2"
+    "cors": "^2.8.5",
+    "discord.js-selfbot-v13": "^2.15.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.2.0",
+    "helmet": "^7.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
