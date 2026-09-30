@@ -1,148 +1,71 @@
 // ============================================================
-// 7/24 SES KANALI KEEPER - RENDER SÜRÜMÜ + UPTIMEROBOT
+// ULTRA LUXURY DISCORD VOICE KEEPER & MANAGEMENT DASHBOARD
 // ============================================================
-// Environment Variables:
-//   DISCORD_TOKEN  → Discord selfbot token
-//   GUILD_ID       → Sunucu ID
-//   CHANNEL_ID     → Ses kanalı ID
-//   PORT           → Render otomatik atar
-// ============================================================
-
 const { Client } = require('discord.js-selfbot-v13');
 const express = require('express');
+const path = require('path');
 
-// ------------------------------------------------------------
-// ENV DEĞİŞKENLERİ
-// ------------------------------------------------------------
+const PORT = process.env.PORT || 3000;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const GUILD_ID      = process.env.GUILD_ID;
-const CHANNEL_ID    = process.env.CHANNEL_ID;
-const PORT          = process.env.PORT || 3000;
+const PANEL_PASSWORD = process.env.PANEL_PASSWORD || 'Emir0203'; // ENV veya varsayılan şifre
 
-if (!DISCORD_TOKEN) { console.error('[X] DISCORD_TOKEN eksik!'); process.exit(1); }
-if (!GUILD_ID)      { console.error('[X] GUILD_ID eksik!');      process.exit(1); }
-if (!CHANNEL_ID)    { console.error('[X] CHANNEL_ID eksik!');    process.exit(1); }
+const app = express();
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
 // ------------------------------------------------------------
-// DURUM
+// DURUM METRİKLERİ VE SİSTEM TESPİTİ
 // ------------------------------------------------------------
-const baslangicZamani = Date.now();
-let sonDurum = {
-    bagli: false,
-    kanal: null,
-    sunucu: null,
-    deneme: 0,
-    sonHata: null,
-    sonBaglanmaZamani: null,
-    toplamBaglanma: 0,
-    toplamKopma: 0
+const systemStats = {
+    startTime: Date.now(),
+    connectedGuild: null,
+    connectedChannel: null,
+    status: 'DISCONNECTED', // CONNECTED, CONNECTING, DISCONNECTED
+    reconnectCount: 0,
+    disconnectCount: 0,
+    logs: [],
+    currentGuildId: process.env.GUILD_ID || null,
+    currentChannelId: process.env.CHANNEL_ID || null
+};
+
+function logToSystem(msg, type = 'INFO') {
+    const timestamp = new Date().toLocaleTimeString('tr-TR');
+    const logEntry = { timestamp, msg, type };
+    systemStats.logs.unshift(logEntry);
+    if (systemStats.logs.length > 50) systemStats.logs.pop();
+    console.log(`[${timestamp}] [${type}] ${msg}`);
+}
+
+// ------------------------------------------------------------
+// AUTH MIDDLEWARE (GÜVENLİK)
+// ------------------------------------------------------------
+const authCheck = (req, res, next) => {
+    const authHeader = req.headers['x-panel-auth'];
+    if (authHeader === PANEL_PASSWORD) {
+        next();
+    } else {
+        res.status(401).json({ success: false, message: 'Yetkisiz Erişim! Geçersiz Şifre.' });
+    }
 };
 
 // ------------------------------------------------------------
-// HEALTH CHECK SERVER
-// ------------------------------------------------------------
-const app = express();
-
-// UPTIMEROBOT İÇİN ÖZEL ENDPOINT — her zaman 200 OK döner
-// UptimeRobot buraya ping atacak, Render uyumayacak
-app.get('/ping', (req, res) => {
-    res.status(200).send('pong');
-});
-
-// UptimeRobot için ikinci endpoint (yedek)
-app.get('/uptime', (req, res) => {
-    res.status(200).send('OK');
-});
-
-// Render kendi health check'i için (opsiyonel)
-app.get('/health', (req, res) => {
-    // Discord durumu ne olursa olsun 200 dön (Render servisi kapatmasın)
-    res.status(200).json({
-        durum: sonDurum.bagli ? 'bagli' : 'bagli_degil',
-        kanal: sonDurum.kanal,
-        sunucu: sonDurum.sunucu,
-        uptime_saniye: Math.floor((Date.now() - baslangicZamani) / 1000)
-    });
-});
-
-// Detaylı durum (senin manuel kontrolün için)
-app.get('/', (req, res) => {
-    const uptime = Math.floor((Date.now() - baslangicZamani) / 1000);
-    res.json({
-        durum: sonDurum.bagli ? 'bagli' : 'bagli_degil',
-        kanal: sonDurum.kanal,
-        sunucu: sonDurum.sunucu,
-        uptime_saniye: uptime,
-        uptime_okunabilir: formatUptime(uptime),
-        deneme_sayisi: sonDurum.deneme,
-        son_hata: sonDurum.sonHata,
-        son_baglanma: sonDurum.sonBaglanmaZamani,
-        toplam_baglanma: sonDurum.toplamBaglanma,
-        toplam_kopma: sonDurum.toplamKopma,
-        ping_endpoint: '/ping',
-        uptime_endpoint: '/uptime'
-    });
-});
-
-function formatUptime(saniye) {
-    const g = Math.floor(saniye / 86400);
-    const s = Math.floor((saniye % 86400) / 3600);
-    const d = Math.floor((saniye % 3600) / 60);
-    const sn = saniye % 60;
-    return `${g}g ${s}s ${d}d ${sn}sn`;
-}
-
-app.listen(PORT, () => {
-    console.log('[✓] Health check server: port ' + PORT);
-    console.log('[i] UptimeRobot endpoint : /ping');
-    console.log('[i] UptimeRobot endpoint : /uptime');
-    console.log('[i] Detaylı durum       : /');
-});
-
-// ------------------------------------------------------------
-// CLIENT
+// DISCORD SELFBOT CLIENT
 // ------------------------------------------------------------
 const client = new Client({ checkUpdate: false });
 
-let bagliKanalId = null;
-let yenidenBaglaniyor = false;
-let kapatiliyor = false;
-let retrySayaci = 0;
-let retryTimer = null;
-
-// ------------------------------------------------------------
-// SES KANALINA BAĞLAN (RETRY'Lİ)
-// ------------------------------------------------------------
-async function sesKanalinaBaglan(denemeNo) {
-    if (yenidenBaglaniyor || kapatiliyor) return;
-    yenidenBaglaniyor = true;
-    retrySayaci = (denemeNo || 0) + 1;
-    sonDurum.deneme = retrySayaci;
-
+async function joinVoiceChannel(guildId, channelId) {
     try {
-        let guild = client.guilds.cache.get(GUILD_ID);
-        if (!guild) guild = await client.guilds.fetch(GUILD_ID).catch(() => null);
-        if (!guild) throw new Error('Sunucu bulunamadı: ' + GUILD_ID);
-        sonDurum.sunucu = guild.name;
+        systemStats.status = 'CONNECTING';
+        logToSystem(`Kanala bağlanma isteği gönderildi: Guild [${guildId}] Channel [${channelId}]`, 'STATE');
 
-        let channel = client.channels.cache.get(CHANNEL_ID);
-        if (!channel) channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
-        if (!channel) throw new Error('Ses kanalı bulunamadı: ' + CHANNEL_ID);
-        if (!channel.isVoice()) throw new Error('Kanal ses kanalı değil: ' + channel.name);
-        sonDurum.kanal = channel.name;
+        let guild = client.guilds.cache.get(guildId);
+        if (!guild) guild = await client.guilds.fetch(guildId).catch(() => null);
+        if (!guild) throw new Error('Sunucu bulunamadı!');
 
-        const me = guild.members.me;
-        if (me && me.voice && me.voice.channelId === channel.id) {
-            console.log('[i] Zaten bağlı: ' + channel.name);
-            bagliKanalId = channel.id;
-            sonDurum.bagli = true;
-            sonDurum.sonHata = null;
-            yenidenBaglaniyor = false;
-            retrySayaci = 0;
-            return;
-        }
-
-        console.log('[>] Bağlanılıyor (' + retrySayaci + '. deneme): ' + guild.name + ' / ' + channel.name);
+        let channel = client.channels.cache.get(channelId);
+        if (!channel) channel = await client.channels.fetch(channelId).catch(() => null);
+        if (!channel) throw new Error('Kanal bulunamadı!');
+        if (!channel.isVoice()) throw new Error('Seçilen kanal ses kanalı değil!');
 
         await client.voice.joinChannel(channel, {
             selfMute: false,
@@ -150,161 +73,143 @@ async function sesKanalinaBaglan(denemeNo) {
             force: true
         });
 
-        bagliKanalId = channel.id;
-        sonDurum.bagli = true;
-        sonDurum.sonHata = null;
-        sonDurum.sonBaglanmaZamani = new Date().toISOString();
-        sonDurum.toplamBaglanma++;
-        retrySayaci = 0;
-        console.log('[✓] Bağlandı: ' + channel.name + ' (' + guild.name + ')');
+        systemStats.connectedGuild = { id: guild.id, name: guild.name, icon: guild.iconURL() };
+        systemStats.connectedChannel = { id: channel.id, name: channel.name };
+        systemStats.currentGuildId = guild.id;
+        systemStats.currentChannelId = channel.id;
+        systemStats.status = 'CONNECTED';
+        systemStats.reconnectCount++;
 
+        logToSystem(`Başarıyla bağlandı: ${guild.name} / ${channel.name}`, 'SUCCESS');
+        return { success: true, message: `Bağlandı: ${channel.name}` };
     } catch (err) {
-        sonDurum.bagli = false;
-        sonDurum.sonHata = err.message;
-        console.log('[X] Bağlanma hatası (deneme ' + retrySayaci + '): ' + err.message);
-
-        let bekle = Math.min(5 * Math.pow(2, retrySayaci - 1), 60);
-        console.log('[i] ' + bekle + ' saniye sonra tekrar denenecek...');
-
-        if (retryTimer) clearTimeout(retryTimer);
-        retryTimer = setTimeout(() => {
-            yenidenBaglaniyor = false;
-            sesKanalinaBaglan(retrySayaci);
-        }, bekle * 1000);
-        return;
+        systemStats.status = 'DISCONNECTED';
+        logToSystem(`Bağlantı Hatası: ${err.message}`, 'ERROR');
+        return { success: false, message: err.message };
     }
-
-    yenidenBaglaniyor = false;
 }
 
-// ------------------------------------------------------------
-// READY
-// ------------------------------------------------------------
 client.once('ready', async () => {
-    console.log('[✓] Giriş yapıldı: ' + client.user.tag);
-    console.log('[i] Sunucu: ' + GUILD_ID);
-    console.log('[i] Kanal : ' + CHANNEL_ID);
-    console.log('');
-    await sesKanalinaBaglan(0);
+    logToSystem(`Hesap Aktif: ${client.user.tag}`, 'SUCCESS');
+    
+    // Varsayılan ENV değişkenleri varsa otomatik bağlan
+    if (systemStats.currentGuildId && systemStats.currentChannelId) {
+        await joinVoiceChannel(systemStats.currentGuildId, systemStats.currentChannelId);
+    }
 });
 
-// ------------------------------------------------------------
-// SES DURUMU DEĞİŞİKLİĞİ
-// ------------------------------------------------------------
 client.on('voiceStateUpdate', async (oldState, newState) => {
-    if (kapatiliyor) return;
     if (oldState.id !== client.user?.id) return;
 
     if (oldState.channelId && !newState.channelId) {
-        console.log('[!] Ses kanalından atıldı, geri bağlanılıyor...');
-        bagliKanalId = null;
-        sonDurum.bagli = false;
-        sonDurum.toplamKopma++;
-        if (retryTimer) clearTimeout(retryTimer);
-        retryTimer = setTimeout(() => {
-            if (!kapatiliyor) { yenidenBaglaniyor = false; sesKanalinaBaglan(0); }
-        }, 2000);
-    }
-
-    if (oldState.channelId && newState.channelId && newState.channelId !== CHANNEL_ID) {
-        console.log('[!] Farklı kanala taşındı, hedef kanala dönülüyor...');
-        bagliKanalId = null;
-        sonDurum.bagli = false;
-        if (retryTimer) clearTimeout(retryTimer);
-        retryTimer = setTimeout(() => {
-            if (!kapatiliyor) { yenidenBaglaniyor = false; sesKanalinaBaglan(0); }
-        }, 2000);
-    }
-});
-
-// ------------------------------------------------------------
-// HATA YÖNETİMİ
-// ------------------------------------------------------------
-client.on('error', (err) => {
-    console.log('[X] Client hatası: ' + err.message);
-});
-
-client.on('shardDisconnect', () => {
-    if (kapatiliyor) return;
-    console.log('[!] Bağlantı koptu.');
-    sonDurum.bagli = false;
-    sonDurum.toplamKopma++;
-});
-
-client.on('shardReconnecting', () => {
-    console.log('[*] Discord yeniden bağlanıyor...');
-});
-
-client.on('shardResume', () => {
-    console.log('[✓] Discord bağlantısı yeniden kuruldu.');
-    setTimeout(() => {
-        if (!kapatiliyor) { yenidenBaglaniyor = false; sesKanalinaBaglan(0); }
-    }, 3000);
-});
-
-// ------------------------------------------------------------
-// PERİYODİK KONTROL (her 30 saniyede bir)
-// ------------------------------------------------------------
-setInterval(() => {
-    if (kapatiliyor) return;
-    if (!client || !client.user) return;
-
-    const guild = client.guilds.cache.get(GUILD_ID);
-    if (!guild) return;
-
-    const me = guild.members.me;
-    if (!me) return;
-
-    const suAnkiKanal = me.voice?.channelId;
-    if (suAnkiKanal !== CHANNEL_ID) {
-        console.log('[!] Bağlı değil (kanal: ' + (suAnkiKanal || 'yok') + '), yeniden bağlanılıyor...');
-        bagliKanalId = null;
-        sonDurum.bagli = false;
-        if (!yenidenBaglaniyor) {
-            yenidenBaglaniyor = false;
-            sesKanalinaBaglan(0);
+        logToSystem('Ses kanalından atıldınız! Otomatik geri bağlanılıyor...', 'WARN');
+        systemStats.status = 'DISCONNECTED';
+        systemStats.disconnectCount++;
+        if (systemStats.currentGuildId && systemStats.currentChannelId) {
+            setTimeout(() => joinVoiceChannel(systemStats.currentGuildId, systemStats.currentChannelId), 3000);
         }
+    }
+});
+
+// ------------------------------------------------------------
+// EXPRESS REST API ENDPOINTS
+// ------------------------------------------------------------
+
+// UptimeRobot / Render Health Check
+app.get('/ping', (req, res) => res.status(200).send('PONG'));
+
+// Şifre Doğrulama API
+app.post('/api/login', (req, res) => {
+    const { password } = req.body;
+    if (password === PANEL_PASSWORD) {
+        res.json({ success: true, token: PANEL_PASSWORD });
     } else {
-        sonDurum.bagli = true;
+        res.status(401).json({ success: false, message: 'Hatalı Parola!' });
     }
-}, 30000);
+});
 
-// ------------------------------------------------------------
-// LOGIN
-// ------------------------------------------------------------
-(async () => {
+// Sistem İstatistikleri & Durum API
+app.get('/api/stats', authCheck, (req, res) => {
+    const memoryUsage = process.memoryUsage();
+    res.json({
+        uptime: Math.floor((Date.now() - systemStats.startTime) / 1000),
+        status: systemStats.status,
+        botUser: client.user ? {
+            tag: client.user.tag,
+            avatar: client.user.displayAvatarURL(),
+            id: client.user.id
+        } : null,
+        connectedGuild: systemStats.connectedGuild,
+        connectedChannel: systemStats.connectedChannel,
+        reconnectCount: systemStats.reconnectCount,
+        disconnectCount: systemStats.disconnectCount,
+        memoryUsage: `${(memoryUsage.heapUsed / 1024 / 1024).toFixed(2)} MB`,
+        logs: systemStats.logs
+    });
+});
+
+// Hesaptaki Sunucuları ve Ses Kanallarını Listeleme API
+app.get('/api/guilds', authCheck, async (req, res) => {
+    if (!client.user) return res.status(503).json({ success: false, message: 'Discord İstemcisi Hazır Değil' });
+
     try {
-        await client.login(DISCORD_TOKEN);
+        const guildsData = client.guilds.cache.map(guild => {
+            const voiceChannels = guild.channels.cache
+                .filter(ch => ch.isVoice())
+                .map(ch => ({ id: ch.id, name: ch.name, userCount: ch.members.size }));
+
+            return {
+                id: guild.id,
+                name: guild.name,
+                icon: guild.iconURL({ dynamic: true }) || 'https://cdn.discordapp.com/embed/avatars/0.png',
+                memberCount: guild.memberCount,
+                voiceChannels
+            };
+        });
+
+        res.json({ success: true, guilds: guildsData });
     } catch (err) {
-        console.log('[X] Giriş hatası: ' + err.message);
-        console.log('[i] 30 saniye sonra tekrar denenecek...');
-        setTimeout(() => {
-            client.login(DISCORD_TOKEN).catch((e) => {
-                console.log('[X] Tekrar giriş hatası: ' + e.message);
-            });
-        }, 30000);
+        res.status(500).json({ success: false, message: err.message });
     }
-})();
+});
 
-// ------------------------------------------------------------
-// KAPATMA
-// ------------------------------------------------------------
-process.on('SIGINT', async () => {
-    console.log('\n[*] Kapatılıyor...');
-    kapatiliyor = true;
+// Manuel Ses Kanalına Bağlanma API
+app.post('/api/connect', authCheck, async (req, res) => {
+    const { guildId, channelId } = req.body;
+    if (!guildId || !channelId) {
+        return res.status(400).json({ success: false, message: 'Eksik Parametre!' });
+    }
+    const result = await joinVoiceChannel(guildId, channelId);
+    res.json(result);
+});
+
+// Ses Kanalından Ayrılma API
+app.post('/api/disconnect', authCheck, async (req, res) => {
     try {
-        if (retryTimer) clearTimeout(retryTimer);
         if (client.voice && client.voice.adapters) {
-            client.voice.adapters.forEach(a => { try { a.destroy(); } catch {} });
+            client.voice.adapters.forEach(adapter => adapter.destroy());
         }
-        client.destroy();
-    } catch {}
-    process.exit(0);
+        systemStats.status = 'DISCONNECTED';
+        systemStats.connectedGuild = null;
+        systemStats.connectedChannel = null;
+        logToSystem('Ses kanalından manuel olarak ayrılındı.', 'WARN');
+        res.json({ success: true, message: 'Bağlantı Kesildi' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
 });
 
-process.on('SIGTERM', () => {
-    console.log('[*] SIGTERM alındı, kapatılıyor...');
-    kapatiliyor = true;
-    try { client.destroy(); } catch {}
-    process.exit(0);
+// ------------------------------------------------------------
+// SERVER LAUNCH
+// ------------------------------------------------------------
+app.listen(PORT, () => {
+    logToSystem(`Panel sunucusu aktif: Port ${PORT}`, 'INFO');
 });
+
+if (DISCORD_TOKEN) {
+    client.login(DISCORD_TOKEN).catch(err => {
+        logToSystem(`Discord Giriş Başarısız: ${err.message}`, 'ERROR');
+    });
+} else {
+    logToSystem('DISCORD_TOKEN bulunamadı! Lütfen Environment Variable olarak ekleyin.', 'ERROR');
+}
