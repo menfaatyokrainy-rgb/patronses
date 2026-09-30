@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VIP Voice Keeper Control Center</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts (Inter & Outfit) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            font-family: 'Inter', sans-serif;
+        }
+        h1, h2, h3, .brand-font {
+            font-family: 'Outfit', sans-serif;
+        }
+        
+        /* Ultra Glassmorphism Styles */
+        .glass-panel {
+            background: rgba(22, 27, 46, 0.55);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .glass-card:hover {
+            background: rgba(255, 255, 255, 0.07);
+            border-color: rgba(99, 102, 241, 0.4);
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.2);
+        }
+
+        .glass-input {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            transition: all 0.2s ease;
+        }
+
+        .glass-input:focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.3);
+            outline: none;
+        }
+
+        /* Animated Ambient Background */
+        body {
+            background: #090d16;
+            overflow-x: hidden;
+        }
+
+        .ambient-orb {
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(100px);
+            z-index: -1;
+            pointer-events: none;
+            opacity: 0.5;
+            animation: orbFloat 20s infinite alternate ease-in-out;
+        }
+
+        .orb-1 { width: 400px; height: 400px; background: #4f46e5; top: -100px; left: -100px; }
+        .orb-2 { width: 500px; height: 500px; background: #9333ea; bottom: -150px; right: -100px; animation-delay: -5s; }
+        .orb-3 { width: 300px; height: 300px; background: #06b6d4; top: 40%; left: 30%; animation-delay: -10s; }
+
+        @keyframes orbFloat {
+            0% { transform: translate(0, 0) scale(1); }
+            100% { transform: translate(50px, 80px) scale(1.15); }
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.5); }
+    </style>
+</head>
+<body class="text-slate-200 min-h-screen flex flex-col justify-between selection:bg-indigo-500 selection:text-white">
+
+    <!-- Ambient Background Lighting -->
+    <div class="ambient-orb orb-1"></div>
+    <div class="ambient-orb orb-2"></div>
+    <div class="ambient-orb orb-3"></div>
+
+    <!-- ========================================== -->
+    <!-- LOGIN SCREEN MODAL -->
+    <!-- ========================================== -->
+    <div id="loginModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+        <div class="glass-panel w-full max-w-md p-8 rounded-3xl text-center relative overflow-hidden">
+            <div class="absolute -top-12 -right-12 w-32 h-32 bg-indigo-500/20 rounded-full blur-2xl"></div>
+            
+            <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                <i class="fa-solid fa-shield-halved text-2xl text-white"></i>
+            </div>
+            
+            <h2 class="text-2xl font-bold text-white mb-1 tracking-wide">Yönetim Paneli</h2>
+            <p class="text-xs text-slate-400 mb-6">Devam etmek için güvenli giriş şifrenizi girin</p>
+
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="mb-4 relative">
+                    <input type="password" id="passInput" placeholder="Panel Şifresi..." required
+                        class="glass-input w-full px-4 py-3.5 rounded-xl text-center font-mono tracking-widest text-sm focus:ring-0">
+                </div>
+                <button type="submit" id="loginBtn"
+                    class="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold text-sm hover:from-indigo-500 hover:to-purple-500 transition-all shadow-lg shadow-indigo-600/30 active:scale-[0.98]">
+                    Giriş Yap <i class="fa-solid fa-arrow-right ml-2 text-xs"></i>
+                </button>
+            </form>
+            <p id="loginError" class="text-rose-400 text-xs mt-4 hidden font-medium"></p>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MAIN DASHBOARD CONTENT -->
+    <!-- ========================================== -->
+    <div id="dashboard" class="hidden flex-col min-h-screen">
+        
+        <!-- TOP NAVIGATION BAR -->
+        <header class="glass-panel sticky top-0 z-40 px-6 py-4 border-b border-white/10 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-cyan-400 flex items-center justify-center shadow-md shadow-indigo-500/20">
+                    <i class="fa-solid fa-bolt text-white text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg text-white leading-none">VIP KEEPER <span class="text-xs font-normal px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 ml-2">PRO v3.5</span></h1>
+                    <span class="text-[11px] text-slate-400">7/24 Kesintisiz Voice Keeper Engine</span>
+                </div>
+            </div>
+
+            <!-- Bot Account Badge -->
+            <div class="flex items-center gap-4">
+                <div id="userBadge" class="flex items-center gap-3 bg-slate-900/40 px-3 py-1.5 rounded-full border border-white/5">
+                    <img id="botAvatar" src="https://cdn.discordapp.com/embed/avatars/0.png" class="w-7 h-7 rounded-full bg-slate-800">
+                    <span id="botTag" class="text-xs font-medium text-slate-300">Yükleniyor...</span>
+                </div>
+                <button onclick="logout()" class="text-slate-400 hover:text-rose-400 text-sm transition-colors p-2" title="Çıkış Yap">
+                    <i class="fa-solid fa-power-off"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- MAIN CONTAINER -->
+        <main class="flex-1 max-w-7xl w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- LEFT COLUMN: Guilds & Voice Channels Selector (7 Cols) -->
+            <section class="lg:col-span-7 flex flex-col gap-4">
+                <div class="glass-panel p-5 rounded-2xl flex items-center justify-between">
+                    <div>
+                        <h2 class="font-semibold text-base text-white">Sunucu ve Ses Kanalları</h2>
+                        <p class="text-xs text-slate-400">AFK kalmak istediğiniz kanala tıklayarak anında bağlanın</p>
+                    </div>
+                    <button onclick="loadGuilds()" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-slate-300 border border-white/10 transition-colors">
+                        <i class="fa-solid fa-rotate-right mr-1"></i> Yenile
+                    </button>
+                </div>
+
+                <!-- Guilds Accordion List Container -->
+                <div id="guildsList" class="flex flex-col gap-3 max-h-[650px] overflow-y-auto pr-1">
+                    <div class="text-center py-12 text-slate-500">
+                        <i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2"></i>
+                        <p class="text-xs">Sunucular yükleniyor...</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- RIGHT COLUMN: System Stats, Active Channel & Live Logs (5 Cols) -->
+            <section class="lg:col-span-5 flex flex-col gap-6">
+                
+                <!-- Active Connection Status Card -->
+                <div class="glass-panel p-6 rounded-2xl relative overflow-hidden">
+                    <div class="flex items-center justify-between mb-4">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Mevcut Durum</span>
+                        <span id="statusIndicator" class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-400 border border-slate-700">
+                            Bekleniyor
+                        </span>
+                    </div>
+
+                    <div class="space-y-3">
+                        <div class="bg-black/20 p-3 rounded-xl border border-white/5 flex items-center gap-3">
+                            <i class="fa-solid fa-server text-indigo-400 text-base w-5 text-center"></i>
+                            <div>
+                                <p class="text-[10px] text-slate-400 uppercase font-medium">Bağlı Sunucu</p>
+                                <p id="activeGuildName" class="text-xs font-semibold text-white">Bağlı Değil</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-black/20 p-3 rounded-xl border border-white/5 flex items-center gap-3">
+                            <i class="fa-solid fa-microphone text-cyan-400 text-base w-5 text-center"></i>
+                            <div>
+                                <p class="text-[10px] text-slate-400 uppercase font-medium">Bağlı Kanal</p>
+                                <p id="activeChannelName" class="text-xs font-semibold text-white">Bağlı Değil</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button id="disconnectBtn" onclick="disconnectVoice()" disabled
+                        class="w-full mt-4 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-semibold border border-rose-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                        <i class="fa-solid fa-phone-slash mr-1"></i> Bağlantıyı Kes
+                    </button>
+                </div>
+
+                <!-- Metrics Grid -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="glass-panel p-4 rounded-xl">
+                        <div class="text-indigo-400 text-sm mb-1"><i class="fa-solid fa-clock"></i></div>
+                        <p class="text-[10px] text-slate-400 uppercase font-semibold">Sistem Uptime</p>
+                        <p id="statUptime" class="text-sm font-bold text-white mt-0.5">00s 00d</p>
+                    </div>
+                    <div class="glass-panel p-4 rounded-xl">
+                        <div class="text-cyan-400 text-sm mb-1"><i class="fa-solid fa-memory"></i></div>
+                        <p class="text-[10px] text-slate-400 uppercase font-semibold">RAM Kullanımı</p>
+                        <p id="statRam" class="text-sm font-bold text-white mt-0.5">0 MB</p>
+                    </div>
+                </div>
+
+                <!-- Realtime System Log Console -->
+                <div class="glass-panel p-4 rounded-2xl flex-1 flex flex-col">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300">
+                            <i class="fa-solid fa-terminal mr-1.5 text-indigo-400"></i> Canlı Konsol Günlüğü
+                        </h3>
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    </div>
+                    <div id="logConsole" class="flex-1 bg-black/50 p-3 rounded-xl border border-white/5 font-mono text-[11px] space-y-1.5 max-h-[220px] overflow-y-auto">
+                        <div class="text-slate-500">[--:--:--] Konsol dinleniyor...</div>
+                    </div>
+                </div>
+
+            </section>
+        </main>
+
+        <!-- FOOTER -->
+        <footer class="glass-panel px-6 py-3 border-t border-white/5 text-center text-xs text-slate-500">
+            Render Node.js Environment &bull; Designed by Ultra Pro Architecture &bull; Emir0203 Protected
+        </footer>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- JAVASCRIPT LOGIC -->
+    <!-- ========================================== -->
+    <script>
+        let AUTH_TOKEN = localStorage.getItem('panelToken') || '';
+
+        // Sayfa Yüklendiğinde Doğrulama Kontrolü
+        window.addEventListener('DOMContentLoaded', () => {
+            if (AUTH_TOKEN) {
+                showDashboard();
+            }
+        });
+
+        // Giriş Yapma İşlemi
+        async function handleLogin(e) {
+            e.preventDefault();
+            const pass = document.getElementById('passInput').value;
+            const errEl = document.getElementById('loginError');
+            errEl.classList.add('hidden');
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pass })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    AUTH_TOKEN = data.token;
+                    localStorage.setItem('panelToken', AUTH_TOKEN);
+                    showDashboard();
+                } else {
+                    errEl.innerText = data.message;
+                    errEl.classList.remove('hidden');
+                }
+            } catch (err) {
+                errEl.innerText = 'Sunucuya bağlanılamadı!';
+                errEl.classList.remove('hidden');
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('panelToken');
+            location.reload();
+        }
+
+        function showDashboard() {
+            document.getElementById('loginModal').classList.add('hidden');
+            document.getElementById('dashboard').classList.remove('hidden');
+            document.getElementById('dashboard').classList.add('flex');
+            
+            // Veri Akışını Başlat
+            loadGuilds();
+            fetchStats();
+            setInterval(fetchStats, 3000); // Her 3 saniyede bir istatistikleri güncelle
+        }
+
+        // API İstekleri İçin Header Helper
+        function getHeaders() {
+            return {
+                'Content-Type': 'application/json',
+                'x-panel-auth': AUTH_TOKEN
+            };
+        }
+
+        // Sunucuları ve Kanalları Çekme
+        async function loadGuilds() {
+            const container = document.getElementById('guildsList');
+            try {
+                const res = await fetch('/api/guilds', { headers: getHeaders() });
+                const data = await res.json();
+
+                if (!data.success) {
+                    if (res.status === 401) logout();
+                    return;
+                }
+
+                container.innerHTML = '';
+                if (data.guilds.length === 0) {
+                    container.innerHTML = `<div class="text-center py-8 text-slate-400">Sunucu bulunamadı.</div>`;
+                    return;
+                }
+
+                data.guilds.forEach(guild => {
+                    const card = document.createElement('div');
+                    card.className = 'glass-card p-4 rounded-xl border border-white/5 transition-all';
+                    
+                    let voiceChannelsHTML = '';
+                    if (guild.voiceChannels.length === 0) {
+                        voiceChannelsHTML = `<div class="text-slate-500 text-[11px] italic p-2">Ses kanalı bulunmuyor.</div>`;
+                    } else {
+                        guild.voiceChannels.forEach(ch => {
+                            voiceChannelsHTML += `
+                                <div onclick="connectToChannel('${guild.id}', '${ch.id}')" 
+                                    class="flex items-center justify-between p-2.5 rounded-lg bg-black/20 hover:bg-indigo-600/30 hover:border-indigo-500/40 border border-white/5 cursor-pointer transition-all group">
+                                    <div class="flex items-center gap-2">
+                                        <i class="fa-solid fa-volume-high text-xs text-slate-400 group-hover:text-indigo-400"></i>
+                                        <span class="text-xs text-slate-200 group-hover:text-white font-medium">${ch.name}</span>
+                                    </div>
+                                    <span class="text-[10px] text-slate-400 bg-white/5 px-2 py-0.5 rounded-full"><i class="fa-solid fa-users text-[9px] mr-1"></i>${ch.userCount}</span>
+                                </div>
+                            `;
+                        });
+                    }
+
+                    card.innerHTML = `
+                        <div class="flex items-center justify-between cursor-pointer" onclick="toggleAccordion('${guild.id}')">
+                            <div class="flex items-center gap-3">
+                                <img src="${guild.icon}" class="w-9 h-9 rounded-xl object-cover bg-slate-800">
+                                <div>
+                                    <h3 class="text-xs font-semibold text-white leading-tight">${guild.name}</h3>
+                                    <span class="text-[10px] text-slate-400">${guild.memberCount} Üye &bull; ${guild.voiceChannels.length} Ses Kanalı</span>
+                                </div>
+                            </div>
+                            <i id="arrow-${guild.id}" class="fa-solid fa-chevron-down text-xs text-slate-400 transition-transform"></i>
+                        </div>
+                        <div id="channels-${guild.id}" class="hidden space-y-1.5 mt-3 pt-3 border-t border-white/5">
+                            ${voiceChannelsHTML}
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+
+            } catch (err) {
+                container.innerHTML = `<div class="text-center py-8 text-rose-400 text-xs">Sunucu listesi yüklenemedi.</div>`;
+            }
+        }
+
+        function toggleAccordion(guildId) {
+            const target = document.getElementById(`channels-${guildId}`);
+            const arrow = document.getElementById(`arrow-${guildId}`);
+            if (target.classList.contains('hidden')) {
+                target.classList.remove('hidden');
+                arrow.classList.add('rotate-180');
+            } else {
+                target.classList.add('hidden');
+                arrow.classList.remove('rotate-180');
+            }
+        }
+
+        // Ses Kanalına Bağlanma Çağrısı
+        async function connectToChannel(guildId, channelId) {
+            try {
+                const res = await fetch('/api/connect', {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify({ guildId, channelId })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    fetchStats();
+                } else {
+                    alert('Hata: ' + data.message);
+                }
+            } catch (err) {
+                alert('Bağlantı hatası oluştu!');
+            }
+        }
+
+        // Ses Kanalından Ayrılma
+        async function disconnectVoice() {
+            try {
+                await fetch('/api/disconnect', { method: 'POST', headers: getHeaders() });
+                fetchStats();
+            } catch (err) {
+                alert('Ayrılma hatası!');
+            }
+        }
+
+        // Metrikleri ve Konsolu Güncelleme
+        async function fetchStats() {
+            try {
+                const res = await fetch('/api/stats', { headers: getHeaders() });
+                if (res.status === 401) logout();
+                const data = await res.json();
+
+                // Bot Bilgisi
+                if (data.botUser) {
+                    document.getElementById('botTag').innerText = data.botUser.tag;
+                    document.getElementById('botAvatar').src = data.botUser.avatar;
+                }
+
+                // Bağlantı Durumu
+                const statusEl = document.getElementById('statusIndicator');
+                const disBtn = document.getElementById('disconnectBtn');
+                if (data.status === 'CONNECTED') {
+                    statusEl.innerText = 'BAĞLI (7/24 ACTIVE)';
+                    statusEl.className = 'px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+                    disBtn.disabled = false;
+                } else if (data.status === 'CONNECTING') {
+                    statusEl.innerText = 'BAĞLANILIYOR...';
+                    statusEl.className = 'px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/20';
+                    disBtn.disabled = true;
+                } else {
+                    statusEl.innerText = 'BAĞLI DEĞİL';
+                    statusEl.className = 'px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-400 border border-rose-500/20';
+                    disBtn.disabled = true;
+                }
+
+                // Aktif İsimler
+                document.getElementById('activeGuildName').innerText = data.connectedGuild ? data.connectedGuild.name : 'Bağlı Değil';
+                document.getElementById('activeChannelName').innerText = data.connectedChannel ? data.connectedChannel.name : 'Bağlı Değil';
+
+                // Metrikler
+                document.getElementById('statUptime').innerText = formatUptime(data.uptime);
+                document.getElementById('statRam').innerText = data.memoryUsage;
+
+                // Loglar
+                const consoleEl = document.getElementById('logConsole');
+                consoleEl.innerHTML = '';
+                data.logs.forEach(log => {
+                    let colorClass = 'text-slate-300';
+                    if (log.type === 'ERROR') colorClass = 'text-rose-400 font-semibold';
+                    if (log.type === 'SUCCESS') colorClass = 'text-emerald-400';
+                    if (log.type === 'WARN') colorClass = 'text-amber-400';
+
+                    consoleEl.innerHTML += `
+                        <div class="leading-relaxed">
+                            <span class="text-slate-500">[${log.timestamp}]</span>
+                            <span class="${colorClass}">${log.msg}</span>
+                        </div>
+                    `;
+                });
+
+            } catch (err) {}
+        }
+
+        function formatUptime(seconds) {
+            const d = Math.floor(seconds / (3600*24));
+            const h = Math.floor(seconds % (3600*24) / 3600);
+            const m = Math.floor(seconds % 3600 / 60);
+            const s = Math.floor(seconds % 60);
+            return `${d > 0 ? d + 'g ' : ''}${h}s ${m}d ${s}sn`;
+        }
+    </script>
+</body>
+</html>
